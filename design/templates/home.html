@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <title>Файловое хранилище</title>
+    <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+    <h1>Добро пожаловать в Распределенное облачное хранилище</h1>
+
+    {% if user %}
+        <p>Вы вошли как: {{ user.email }}</p>
+        <form method="post" action="/auth/logout">
+            <button type="submit">Выйти</button>
+        </form>
+
+        <h2>Папка: {{ current_folder.name if current_folder else "Корневая" }}</h2>
+
+        <!-- Навигация вверх -->
+        {% if current_folder and current_folder.parent %}
+            <p><a href="/?folder_id={{ current_folder.parent.id }}">Вверх: {{ current_folder.parent.name }}</a></p>
+        {% elif current_folder %}
+            <p><a href="/">Вверх: Корневая папка</a></p>
+        {% endif %}
+
+        <!-- Создать новую папку -->
+        <h3>Создать папку</h3>
+        <form method="post" action="/folders">
+            <input type="hidden" name="parent_id" value="{{ current_folder.id if current_folder else '' }}" />
+            <input type="text" name="name" placeholder="Имя папки" required />
+            <button type="submit">Создать</button>
+        </form>
+
+        <!-- Загрузка файла -->
+        <h3>Загрузить файл</h3>
+        <form action="/file/upload" method="post" enctype="multipart/form-data">
+            <input type="hidden" name="folder_id" value="{{ current_folder.id if current_folder else '' }}" />
+            <input type="file" name="file" required />
+            <button type="submit">Загрузить</button>
+        </form>
+
+        {% if request.query_params.msg %}
+            <div class="flash-message">{{ request.query_params.msg }}</div>
+        {% endif %}
+
+        <!-- Список папок -->
+        <h3>Папки</h3>
+        {% if folders %}
+            <ul>
+                {% for folder in folders %}
+                    <li>
+                        📁 <a href="/?folder_id={{ folder.id }}">{{ folder.name }}</a>
+                        <button onclick="showRenameForm('{{ folder.id }}', '{{ folder.name }}')" class="rename-btn">Переименовать</button>
+                        <form method="post" action="/folders/delete/{{ folder.id }}" style="display:inline;" onsubmit="return confirm('Удалить папку {{ folder.name }}?');">
+                            <button type="submit" class="delete-btn">Удалить</button>
+                        </form>
+                        
+                        <!-- Форма для переименования (изначально скрыта) -->
+                        <div id="rename-form-{{ folder.id }}" style="display: none;">
+                            <form onsubmit="renameFolder(event, '{{ folder.id }}')">
+                                <input type="text" id="new-name-{{ folder.id }}" value="{{ folder.name }}" required />
+                                <button type="submit">Сохранить</button>
+                                <button type="button" onclick="hideRenameForm('{{ folder.id }}')">Отмена</button>
+                            </form>
+                        </div>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>Папок нет</p>
+        {% endif %}
+
+        <script>
+            // Показываем форму переименования
+            function showRenameForm(folderId, currentName) {
+                // Скрываем все другие формы переименования
+                document.querySelectorAll('[id^="rename-form-"]').forEach(form => {
+                    form.style.display = 'none';
+                });
+                
+                const form = document.getElementById(`rename-form-${folderId}`);
+                form.style.display = 'block';
+                document.getElementById(`new-name-${folderId}`).value = currentName;
+            }
+            
+            // Скрываем форму переименования
+            function hideRenameForm(folderId) {
+                document.getElementById(`rename-form-${folderId}`).style.display = 'none';
+            }
+            
+            // Отправляем запрос на переименование
+            async function renameFolder(event, folderId) {
+                event.preventDefault();
+                const newName = document.getElementById(`new-name-${folderId}`).value.trim();
+                
+                if (!newName) {
+                    alert('Введите новое имя папки');
+                    return;
+                }
+                
+                try {
+                    const response = await fetch(`/folders/${folderId}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ name: newName })
+                    });
+                    
+                    if (response.ok) {
+                        // Обновляем страницу, чтобы показать новое имя
+                        window.location.reload();
+                    } else {
+                        const error = await response.json();
+                        alert(error.detail || 'Ошибка при переименовании папки');
+                    }
+                } catch (err) {
+                    console.error('Ошибка:', err);
+                    alert('Ошибка соединения с сервером');
+                }
+            }
+        </script>
+
+        <!-- Список файлов -->
+        <h3>Файлы</h3>
+        {% if files %}
+            <ul>
+                {% for file in files %}
+                    <li>
+                            {{ file.name }} 
+                            <a href="/file/download/{{ file.id }}">Скачать</a>
+                            <a href="/versions/file/{{ file.id }}">Версии</a>
+                            <form method="post" action="/file/delete/{{ file.id }}" style="display:inline;" onsubmit="return confirm('Удалить файл {{ file.name }}?');">
+                            <button type="submit" class="delete-btn">Удалить</button>
+                        </form>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>Файлов нет</p>
+        {% endif %}
+
+    {% else %}
+        <a href="/auth/login"><button>Войти</button></a>
+        <a href="/auth/register"><button>Зарегистрироваться</button></a>
+    {% endif %}
+
+    <script>
+        function askToRefreshToken() {
+            const shouldRefresh = confirm("Ваша сессия скоро истечёт. Обновить доступ?");
+
+            if (shouldRefresh) {
+                fetch("/auth/refresh", {
+                    method: "POST",
+                    credentials: "include"
+                }).then(response => {
+                    if (response.ok) {
+                        console.log("Access токен обновлён");
+                    } else {
+                        alert("Не удалось обновить токен. Пожалуйста, войдите заново.");
+                        window.location.href = "/auth/login";
+                    }
+                }).catch(error => {
+                    console.error("Ошибка при обновлении токена:", error);
+                    alert("Ошибка соединения. Пожалуйста, войдите заново.");
+                    window.location.href = "/auth/login";
+                });
+            } 
+            else {
+                console.log("Пользователь отказался от обновления токена.");
+            }
+        }
+        setTimeout(askToRefreshToken, 14 * 60 * 1000);
+    </script>
+
+</body>
+</html>
