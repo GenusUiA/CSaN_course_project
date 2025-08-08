@@ -8,3 +8,8 @@ passlib[bcrypt]
 email-validator
 itsdangerous
 psycopg2-binary
+python-jose[cryptography]
+jinja2
+python-multipart
+httpx
+alembic
